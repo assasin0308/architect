@@ -164,7 +164,10 @@ echo 1 >  /proc/sys/net/ipv4/ip_nonlocal_bind  # 监听非本地IP
 	* CPU: 12C以上
 	* 内存: 16G
 	* 网络: 千兆
-
+# 系统初始化
+	* 关闭selinux:  /etc/selinux/config
+	* 关闭iptables: chkconfig iptable off
+	* 调整ulimit限制:  echo -e '* soft nproc 65536\n* hard nproc 65536\n* soft nofile 65536\n* hard nofile 65536\n' >> /etc/security/limits.conf
 ```
 
 ### 9.  
@@ -173,13 +176,72 @@ echo 1 >  /proc/sys/net/ipv4/ip_nonlocal_bind  # 监听非本地IP
 
 ```
 
-### 10.  
+### 10.  jenkins install
 
 ```json
+# docker  installation
+yum install -y yum-utils device-mapper-persistent-data lvm2
 
+yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+
+yum clean all 
+
+yum makecache fast
+
+yum -y install docker-ce
+
+systemctl start docker
+
+docker version
+
+# docker-compose installation
+
+curl -L "https://github.com/docker/compose/releases/download/1.25.5/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+
+chmod +x /usr/local/bin/docker-compose
+
+docker-compose --version
+
+
+# gitlab-ce.tar.gz jenkins.docker.gz jenkins.tar.gz sonarqube.tar.gz
+
+docker load -i gitlab-ce.tar.gz
+
+docker-cpmpose up -d gitlab
+
+docker ps
+
+
+# jenkins installation 
+wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+
+rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io.key
+
+yum install jenkins
+
+
+# jenkins docker installation 
+
+# 获取镜像
+docker pull jenkins/jenkins:lts
+docker pull jenkins/jenkins
+# 启动服务
+docker run -it --name jenkinsci -v $HOME/jenkins:/var/jenkins_home -p 8080:8080 -p 50000:50000 -p 45000:45000 jenkins/jenkins-lts 
+
+
+# gitlab install
+# https://www.cnblogs.com/zhangycun/p/10963094.html
+wget https://mirrors.tuna.tsinghua.edu.cn/gitlab-ce/yum/el7/gitlab-ce-10.0.0-ce.0.el7.x86_64.rpm
+rpm -i gitlab-ce-10.0.0-ce.0.el7.x86_64.rpm
+vim  /etc/gitlab/gitlab.rb
+	external_url "http://服务器IP:port" 默认 8080
+
+gitlab-ctl reconfigure
+gitlab-ctl restart  
+初始账户: root 密码:5iveL!fe
 ```
 
-### 11.  
+### 11.  jenkins case
 
 ```json
 
