@@ -180,7 +180,8 @@ echo 1 >  /proc/sys/net/ipv4/ip_nonlocal_bind  # 监听非本地IP
 
 ```json
 # docker  installation
-yum install -y yum-utils device-mapper-persistent-data lvm2
+yum install -y yum-utils device-mapper-persistent-data lvm2 
+yum install -y java-1.8.0 java-1.8.0-openjdk-devel
 
 yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
 
@@ -236,14 +237,32 @@ rpm -i gitlab-ce-10.0.0-ce.0.el7.x86_64.rpm
 vim  /etc/gitlab/gitlab.rb
 	external_url "http://服务器IP:port" 默认 8080
 
+
 gitlab-ctl reconfigure
 gitlab-ctl restart  
+
+rpm -e gitlab-ce # 卸载
+
 初始账户: root 密码:5iveL!fe
 ```
 
-### 11.  jenkins case
+### 11.  jenkins 
 
 ```json
+# SSH clone code
+ssh-keygen -t rsa -C assasin0308@sina.com
+# 粘贴公钥至gitlab
+
+# apache-maven installation
+wget http://archive.apache.org/dist/maven/maven-3/3.5.2/binaries/apache-maven-3.5.2-bin.tar.gz
+tar zxvf apache-maven-3.5.2-bin.tar.gz
+
+vim /etc/profile
+export M3_HOME=/usr/local/apache-maven-3.5.2
+export PATH=$PATH:$M3_HOME/bin
+source /etc/profile
+
+mvn -version
 
 ```
 
