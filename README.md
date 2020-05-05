@@ -287,8 +287,10 @@ Global Tools Configuration ---> Sonarqube Scanner ---> add
 	sonar.projectKey=demo
 	sonar.projectName=demo
 	sonar.ProjectVersion=1.0
-	sonar.source=./account-web/src
+	sonar.source=./account-email/src
+	sonar.java.binaries=./account-email/target
 
+#-------------------------------------------------------
     sonar.sourceEncoding=UTF-8
     sonar.language=java
     sonar.modules=java-module
@@ -299,7 +301,7 @@ Global Tools Configuration ---> Sonarqube Scanner ---> add
     java-module.sonar.sources=src
     java-module.sonar.projectBaseDir=.
     sonar.java.binaries=bin
-
+#---------------------------------------------------------
 
 ```
 
