@@ -263,6 +263,43 @@ export PATH=$PATH:$M3_HOME/bin
 source /etc/profile
 
 mvn -version
+mvn clean compile
+mvn package
+
+
+# Sonarqube代码质量平台
+# jenkins与Sonarqube集成   
+
+https://www.cnblogs.com/ding2016/p/8065241.html 
+官方文档：https://docs.sonarqube.org/display/SONAR/Installing+the+Server
+官方下载：https://www.sonarqube.org/downloads/
+
+
+
+
+# start sonarquebe
+docker-compose up -d sonarqube
+
+安装 Sonarqube Scanner for jenkins 插件
+系统设置---> Sonarqube servers---> add 
+Global Tools Configuration ---> Sonarqube Scanner ---> add
+配置--->增加构建步骤---> Execute Sonarqube Scanner--->Analysis propertites ---> ....
+	sonar.projectKey=demo
+	sonar.projectName=demo
+	sonar.ProjectVersion=1.0
+	sonar.source=./account-web/src
+
+    sonar.sourceEncoding=UTF-8
+    sonar.language=java
+    sonar.modules=java-module
+
+    java-module.sonar.projectName=Java module
+
+    # 正确的配置
+    java-module.sonar.sources=src
+    java-module.sonar.projectBaseDir=.
+    sonar.java.binaries=bin
+
 
 ```
 
