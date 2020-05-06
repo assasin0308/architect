@@ -290,7 +290,7 @@ Global Tools Configuration ---> Sonarqube Scanner ---> add
 	sonar.source=./account-email/src
 	sonar.java.binaries=./account-email/target
 
-#-------------------------------------------------------
+#----------------------------------------------------------------
     sonar.sourceEncoding=UTF-8
     sonar.language=java
     sonar.modules=java-module
@@ -301,13 +301,89 @@ Global Tools Configuration ---> Sonarqube Scanner ---> add
     java-module.sonar.sources=src
     java-module.sonar.projectBaseDir=.
     sonar.java.binaries=bin
-#---------------------------------------------------------
+#-----------------------------------------------------------------
 
 ```
 
-### 12.  
+### 12.  SaltStack
 
 ```json
+# 四大功能: 远程执行 配置管理  云管理 事件驱动
+
+#-------------------------------------------------------------------------------------
+# 安装  https://www.cnblogs.com/xintiao-/p/10380656.html
+	wget -O /etc/yum.repos.d/CentOS-Base.repo http://mirrors.aliyun.com/repo/Centos-7.repo
+	wget -O /etc/yum.repos.d/epel.repo http://mirrors.aliyun.com/repo/epel-7.repo
+	yum clean all # 清空缓存
+	yum makecache # 生成yum缓存
+	# 查看salt包
+	yum list salt
+
+	# 安装salt-master
+	yum install salt-master -y
+	# 安装salt-minion
+	yum install salt-minion -y
+
+# 配置 - /etc/salt/master
+interface: 0.0.0.0  #绑定到本地的0.0.0.0地址
+publish_port: 4505　　#管理端口，命令发送
+user: root　　　　　　#运行salt进程的用户
+worker_threads: 5　　#salt运行线程数，线程越多处理速度越快，不要超过cpu个数
+ret_port: 4506　　#执行结果返回端口
+pidfile: /var/run/salt-master.pid #pid文件位置
+log_file: /var/log/salt/master　　#日志文件地址
+
+#自动接收minion的key
+auto_accept: False
+
+# 配置 - /etc/salt/minion
+master: master
+master_port: 4506
+user: root
+id: slave
+acceptance_wait_time: 10
+log_file: /var/log/salt/minion
+
+systemctl start salt-minion
+systemctl start salt-master
+
+#-------------------------------------------------------------------------------------
+
+
+# on 192.168.2.102  salt-master +  salt-minion
+1. yum install salt-master salt-minion -y 
+3. systemctl start salt-master
+
+5. vim /etc/salt/minion
+master: 192.168.2.102
+6. systemctl start salt-minion
+8. tree /etc/salt/pki/
+/etc/salt/pki/
+├── master
+│   ├── master.pem
+│   ├── master.pub
+│   ├── minions
+│   ├── minions_autosign
+│   ├── minions_denied
+│   ├── minions_pre
+│   │   ├── 192.168.2.102
+│   │   └── 192.168.2.104
+│   └── minions_rejected
+└── minion
+    ├── minion.pem
+    └── minion.pub 
+
+9. salt-key -A # 同意所有
+10. salt '*' test.ping # 验证
+
+
+# on 192.168.2.104  salt-minion
+2. yum install  salt-minion -y 
+
+4. vim /etc/salt/minion
+master: 192.168.2.102
+7. systemctl start salt-minion
+
 
 ```
 
