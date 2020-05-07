@@ -305,7 +305,7 @@ Global Tools Configuration ---> Sonarqube Scanner ---> add
 
 ```
 
-### 12.  SaltStack
+### 12.  SaltStack installation & configuration
 
 ```json
 # 四大功能: 远程执行 配置管理  云管理 事件驱动
@@ -374,7 +374,11 @@ master: 192.168.2.102
     └── minion.pub 
 
 9. salt-key -A # 同意所有
-10. salt '*' test.ping # 验证
+10. salt '*' test.ping 或 salt \* test.ping # 验证      master使用zeromq向minion发消息 订阅/发布
+11. lsof -n -i:4505  # 检查所有与master 4505端口的连接
+12. salt '*' cmd.run 'w'  # 在所有机器执行w命令
+
+
 
 
 # on 192.168.2.104  salt-minion
@@ -387,25 +391,330 @@ master: 192.168.2.102
 
 ```
 
-### 13.  
+### 13.  SaltStack 一
+
+```json
+# 配置规则一
+  YAML文件使用固定的缩进风格表示数据层级关系,Slat需要每个缩进级别由两个空格组成;
+  不能使用tab
+# 配置规则二 冒号后加空格
+YAML   my_key: my_value 
+
+
+1. vim /etc/salt/master
+
+    416 file_roots:
+    417   base:
+    418     - /srv/salt/base
+    419   dev:
+    420     - /srv/salt/dev
+    421   test:
+    422     - /srv/salt/test
+    423   prod:
+    424     - /srv/salt/prod
+
+2. mkdir -p /srv/salt/{base,dev,test,prod}
+3. systemctl restart salt-master # 重启
+4. salt '*' test.ping # 测试
+#-------------------------------------------------
+5. 安装apapche
+	cd /srv/salt/base/
+	vim apache.sls # 以 .sls 文件结尾
+	apache-install:
+      pkg.installed:
+        - name: httpd
+
+	apache-service:
+      service.running:
+        - name: httpd
+        - enbale: True
+6. salt '192.168.2.104*' state.sls apache
+# 执行效果如下:
+#---------------------------------------------------------------------------
+192.168.2.104:
+----------
+          ID: apache-install
+    Function: pkg.installed
+        Name: httpd
+      Result: True
+     Comment: Package httpd is already installed.
+     Started: 07:07:47.137344
+    Duration: 5760.31 ms
+     Changes:   
+----------
+          ID: apache-service
+    Function: service.running
+        Name: httpd
+      Result: True
+     Comment: Started Service httpd
+     Started: 07:07:53.047608
+    Duration: 2547.25 ms
+     Changes:   
+              ----------
+              httpd:
+                  True
+
+Summary
+------------
+Succeeded: 2 (changed=1)
+Failed:    0
+------------
+Total states run:     2
+#---------------------------------------------------------------------------	
+7. 将 apache.sls归档至 web 目录
+/srv/salt/base/
+└── web
+    └── apache.sls
+8. salt '192.168.2.104*' state.sls web.apache  # web.apache
+# 执行效果同上
+
+# salt 高级状态 
+
+9. vim top.sls
+    base:
+      '192.168.2.104':
+        - web.apache
+      '192.168.2.102':
+        - web.apache
+10. salt '*' state.highstate
+# 执行效果如下:
+#---------------------------------------------------------------------------
+192.168.2.104:
+----------
+          ID: apache-install
+    Function: pkg.installed
+        Name: httpd
+      Result: True
+     Comment: Package httpd is already installed.
+     Started: 07:12:02.969437
+    Duration: 3837.104 ms
+     Changes:   
+----------
+          ID: apache-service
+    Function: service.running
+        Name: httpd
+      Result: True
+     Comment: Started Service httpd
+     Started: 07:12:06.807070
+    Duration: 404.687 ms
+     Changes:   
+              ----------
+              httpd:
+                  True
+
+Summary
+------------
+Succeeded: 2 (changed=1)
+Failed:    0
+------------
+Total states run:     2
+192.168.2.102:
+----------
+          ID: apache-install
+    Function: pkg.installed
+        Name: httpd
+      Result: True
+     Comment: Package httpd is already installed.
+     Started: 23:19:41.248380
+    Duration: 4942.367 ms
+     Changes:   
+----------
+          ID: apache-service
+    Function: service.running
+        Name: httpd
+      Result: True
+     Comment: Started Service httpd
+     Started: 23:19:46.266833
+    Duration: 3536.332 ms
+     Changes:   
+              ----------
+              httpd:
+                  True
+
+Summary
+------------
+Succeeded: 2 (changed=1)
+Failed:    0
+------------
+Total states run:     2
+#---------------------------------------------------------------------------
+
+
+
+# 参考:
+https://www.unixhot.com/docs/saltstack/
+# salt所有状态:
+https://www.unixhot.com/docs/saltstack/ref/states/all/index.html#all-salt-states
+
+
+
+
+# saltstack 配置管理 lamp状态管理
+1. lamp.sls
+/srv/salt/base/
+├── top.sls
+└── web
+    ├── apache.sls
+    └── lamp.sls
+2. vim  lamp.sls
+#---------------------------------------------------------------------------
+lamp-install:
+  pkg.installed:
+    - pkgs:
+      - httpd
+      - php
+      - php-pdo
+      - php-mysql
+
+apache-config:
+  file.managed:
+    - name: /etc/httpd/conf/httpd.conf
+    - source: salt://web/files/httpd.conf
+    - user: root
+    - group: root
+    - mode: 644
+    - require:
+      - pkg: lamp-install
+
+apache-auth:
+  pkg.installed:
+    - name: httpd-tools
+    - require_in:
+      - cmd: apache-auth
+  cmd.run:
+    - name: htpasswd -bc /etc/httpd/conf/htpasswd_file admin admin
+    - unless: test -f /etc/httpd/conf/htpasswd_file
+
+apache-conf:
+  file.recurse:
+    - name: /etc/httpd/conf.d
+    - source: salt://web/files/apache-conf.d
+    - watch_in:
+      - service: lamp-service
+
+/etc/php.ini:
+  file.managed:
+    - source: salt://web/files/php.ini
+    - user: root
+    - group: root
+    - mode: 644
+    - watch_in:
+      - service: lamp-service
+
+lamp-service:
+  service.running:
+    - name: httpd
+    - enable: True
+    - reload: True
+    - watch:
+      - file: apache-config
+      - file: apache-conf
+      
+#---------------------------------------------------------------------------
+
+2. salt '192.168.2.104*' state.highstate test=True
+
+3. vim append.sls  追加方式
+/srv/salt/base/
+├── top.sls
+└── web
+    ├── apache.sls
+    ├── append.sls
+    └── lamp.sls
+
+/etc/profile:
+  file.append:
+    - text:
+      - "#aaa"
+
+4. salt '*' state.sls web.append
+# 执行效果如下:
+#---------------------------------------------------------------------------
+192.168.2.102:
+----------
+          ID: /etc/profile
+    Function: file.append
+      Result: True
+     Comment: File /etc/profile is in correct state
+     Started: 23:50:48.453648
+    Duration: 7.42 ms
+     Changes:   
+
+Summary
+------------
+Succeeded: 1
+Failed:    0
+------------
+Total states run:     1
+192.168.2.104:
+----------
+          ID: /etc/profile
+    Function: file.append
+      Result: True
+     Comment: File /etc/profile is in correct state
+     Started: 07:43:19.090493
+    Duration: 6.02 ms
+     Changes:   
+
+Summary
+------------
+Succeeded: 1
+Failed:    0
+------------
+Total states run:     1
+#---------------------------------------------------------------------------
+5. 包管理--- 功能模块
+# 参考:
+https://docs.saltstack.com/en/latest/ref/states/all/salt.states.pkg.html
+
+状态模块: pkg
+功 能: 管理软件包状态
+常用方法:
+	pkg.installed # 确保软件包已安装,若没安装则进行安装
+	pkg.latest    # 确保软件包是最新版本,如果不是进行升级
+	pkg.remove    # 确保软件包已卸载,如果之前已安装.进行卸载
+	pkg.purge     # 出remove外,也会删除其配置
+
+状态模块: file
+功 能: 管理文件状态
+常用方法:
+	file.managed # 保证文件存在并且为对应的状态
+	file.recurse # 保证目录存在并且为对应的状态
+	file.absent  # 确保文件不存在,如果存在则删除
+
+状态模块: service
+功 能: 管理服务状态
+常用方法:
+	service.running # 确保服务处于运行状态,若没运行则启动
+	service.enabled # 确保服务开机自启动
+	service.disabled # 确保服务开机不自启动
+	service.dead     # 确保服务当前没有运行,若运行则停止运行
+
+状态模块: requisites
+功 能: 处理状态间关系
+常用方法:
+	require # 我依赖某个状态
+	require_in # 我被某个状态依赖
+	watch # 我关注某个状态
+	watch_in # 我被某个状态关注
+
+
+6-- 10:25
+```
+
+### 14.  SaltStack 二
 
 ```json
 
 ```
 
-### 14.  
+### 15.  SaltStack 三
 
 ```json
 
 ```
 
-### 15.  
-
-```json
-
-```
-
-### 16.  
+### 16.  SaltStack 四
 
 ```json
 
