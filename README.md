@@ -558,7 +558,7 @@ https://www.unixhot.com/docs/saltstack/ref/states/all/index.html#all-salt-states
     └── lamp.sls
 2. vim  lamp.sls
 #---------------------------------------------------------------------------
-lamp-install:
+lamp-install:  # 状态id
   pkg.installed:
     - pkgs:
       - httpd
@@ -569,7 +569,7 @@ lamp-install:
 apache-config:
   file.managed:
     - name: /etc/httpd/conf/httpd.conf
-    - source: salt://web/files/httpd.conf
+    - source: salt://web/files/httpd.conf  # base路径
     - user: root
     - group: root
     - mode: 644
@@ -698,25 +698,172 @@ https://docs.saltstack.com/en/latest/ref/states/all/salt.states.pkg.html
 	watch # 我关注某个状态
 	watch_in # 我被某个状态关注
 
-6. 
+# unless: 状态判断 条件为真(0),则不执行
+# cmd.run: 执行模块 
+
 
 ```
 
 ### 14.  SaltStack 二
 
 ```json
+# Tomcat 安装管理
+1. vim tomcat.sls
+
+jdk-install:
+  pkg.installed:
+    - name: java-1.8.0-openjdk
+
+tomcat-install:
+  file.managed:
+    - name: /usr/local/src/apache-tomcat-8.0.46.tar.gz
+    - source: salt://web/apache-tomcat-8.0.46.tar.gz
+    - user: root
+    - group: root
+    - mode: 755
+  cmd.run:
+    - name: cd /usr/local && tar zxf apache-tomcat-8.0.46.tar.gz && mv apache-tomcat-8.0.46 /usr/local/ && ln -s /usr/local/apache-tomcat-8.0.46 /usr/local/tomcat
+    - unless: test -L /usr/local/tomcat && test -d /usr/local/apache-tomcat-8.0.46
+
+
+2. salt '192.168.2.104*' state.sls web.tomcat
+# 执行效果如下:
+#---------------------------------------------------------------------------
+192.168.2.104:
+----------
+          ID: jdk-install
+    Function: pkg.installed
+        Name: java-1.8.0-openjdk
+      Result: True
+     Comment: Package java-1.8.0-openjdk is already installed.
+     Started: 09:17:51.683726
+    Duration: 796.258 ms
+     Changes:   
+----------
+          ID: tomcat-install
+    Function: file.managed
+        Name: /usr/local/apache-tomcat-8.0.46.tar.gz
+      Result: True
+     Comment: File /usr/local/apache-tomcat-8.0.46.tar.gz is in the correct state
+     Started: 09:17:52.481986
+    Duration: 163.66 ms
+     Changes:   
+----------
+          ID: tomcat-install
+    Function: cmd.run
+        Name: cd /usr/local/ && tar zxf apache-tomcat-8.0.46.tar.gz && mv apache-tomcat-8.0.46 /usr/local/tomcat  && ln -s /usr/local/apache-tomcat-8.0.46 /usr/local/tomcat
+      Result: True
+     Comment: Command "cd /usr/local/ && tar zxf apache-tomcat-8.0.46.tar.gz && mv apache-tomcat-8.0.46 /usr/local/tomcat  && ln -s /usr/local/apache-tomcat-8.0.46 /usr/local/tomcat" run
+     Started: 09:17:52.646182
+    Duration: 207.545 ms
+     Changes:   
+              ----------
+              pid:
+                  8610
+              retcode:
+                  0
+              stderr:
+              stdout:
+
+Summary
+------------
+Succeeded: 3 (changed=1)
+Failed:    0
+------------
+Total states run:     3
+#---------------------------------------------------------------------------
+3. salt '*' state.sls web.tomcat
 
 ```
 
 ### 15.  SaltStack 三
 
 ```json
+# salt数据系统: Grains  &   Pillar
+# Minion启动时收集(静态数据)
+# grains应用场景:
+	grains可以再salt系统中用于配置管理模块
+	Grains可以以target中使用,用来匹配Minion,如匹配操作系统,使用-G选项
+	# salt -G "os:CentOS" cmd.run 'uptime'
+	# 执行效果如下:
+	#---------------------------------------------------------------------------
+	192.168.2.104:
+     09:47:17 up  2:45,  1 user,  load average: 0.00, 0.01, 0.06
+	192.168.2.102:
+     22:59:03 up 40 min,  3 users,  load average: 0.00, 0.07, 0.22
+	#---------------------------------------------------------------------------
+	Grains用于信息查询
+	Grains保存着收集到的客户端的详细信息
 
+1. salt '192.168.2.104*' grains.ls 
+2. salt '192.168.2.104*' grains.items
+3. salt '192.168.2.104*' grains.item fqdn_ip4
 ```
 
 ### 16.  SaltStack 四
 
 ```json
+# Apache监听本地IP地址  结合jinjia模板
+	变量使用Grains: {{ grains['fqdn_ip4'][0]}}
+	变量使用执行模块: {{salt['network.hw_addr']('eth0')}}
+	变量使用Pillar: {{pillar['apache']['PORT']}}
+
+# lamp-jinjia.sls
+
+lamp-install:
+  pkg.installed:
+    - pkgs:
+      - httpd
+      - php
+      - php-pdo
+      - php-mysql
+
+apache-config:
+  file.managed:
+    - name: /etc/httpd/conf/httpd.conf
+    - source: salt://web/files/httpd.conf
+    - user: root
+    - group: root
+    - mode: 644
+    - template: jinja
+    - defaults:
+      PORT: 80 
+      IPADDR: {{ grains['fqdn_ip4'][0] }}
+    - require:
+      - pkg: lamp-install
+
+apache-auth: 
+  pkg.installed:
+    - name: httpd-tools
+    - require_in:
+      - cmd: apache-auth
+  cmd.run:
+    - name: htpasswd -bc /etc/httpd/conf/htpasswd_file admin admin
+    - unless: test -f /etc/httpd/conf/htpasswd_file
+
+apache-conf:
+  file.recurse:
+    - name: /etc/httpd/conf.d
+    - source: salt://web/files/apache-conf.d
+    - watch_in:
+      - service: lamp-service
+
+/etc/php.ini:
+  file.managed:
+    - source: salt://web/files/php.ini
+    - user: root
+    - group: root
+    - mode: 644
+    - watch_in:
+      - service: lamp-service
+
+lamp-service:
+  service.running:
+    - name: httpd
+    - enable: True
+    - reload: True
+    - watch:
+      - file: apache-config
 
 ```
 
