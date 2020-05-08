@@ -698,8 +698,8 @@ https://docs.saltstack.com/en/latest/ref/states/all/salt.states.pkg.html
 	watch # 我关注某个状态
 	watch_in # 我被某个状态关注
 
+6. 
 
-6-- 10:25
 ```
 
 ### 14.  SaltStack 二
