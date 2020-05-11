@@ -1418,6 +1418,7 @@ external_auth:
 ### 22.  SaltStack 十
 
 ```json
+# salt-master高可用
 
 ```
 
