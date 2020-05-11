@@ -708,6 +708,7 @@ https://docs.saltstack.com/en/latest/ref/states/all/salt.states.pkg.html
 
 ```json
 # Tomcat 安装管理
+
 1. vim tomcat.sls
 
 jdk-install:
@@ -780,6 +781,7 @@ Total states run:     3
 
 ```json
 # salt数据系统: Grains  &   Pillar
+
 # Minion启动时收集(静态数据)
 # grains应用场景:
 	grains可以再salt系统中用于配置管理模块
@@ -800,10 +802,11 @@ Total states run:     3
 3. salt '192.168.2.104*' grains.item fqdn_ip4
 ```
 
-### 16.  SaltStack 四
+### 16.  SaltStack 四 
 
 ```json
 # Apache监听本地IP地址  结合jinjia模板
+
 	变量使用Grains: {{ grains['fqdn_ip4'][0]}}
 	变量使用执行模块: {{salt['network.hw_addr']('eth0')}}
 	变量使用Pillar: {{pillar['apache']['PORT']}}
@@ -867,37 +870,552 @@ lamp-service:
 
 ```
 
-### 17.  
+### 17.  SaltStack 五
 
-```json
+```json    
+# salt的生产实践
+	不推荐使用 file 目录模块模块进行代码部署
+	不建议salt管理项目的配置文件,建议分层管理,salt只管理应用服务
+	若有固定的文件服务器,可以使用 source: salt://  http://  ftp://
+	SLS版本化
+	使用版本化 Job Cache保存job的输出到MySQL中
+	/var/cache/salt/master/jobs/
+	默认保留24小时: keep_jobs: 24
+
+# 远程执行
+salt <target> <function> <arguments>
+salt '*' cmd.run 'df -h'
+
+# 将返回的数据持久化保存 
+salt '*' test.ping --return redis_return
+salt '*' test.ping --return mongo_return,redis_return,cassandra_return,elasticsearch_return ******
+
+# return ---> mysql
+https://www.unixhot.com/docs/saltstack/ref/returners/all/salt.returners.mysql.html#module-salt.returners.mysql
+
+#  yum -y install mysql-python
+1. vim /etc/salt/master  
+# Which returner(s) will be used for minion's result:
+#return: mysql
+master_job_cache: mysql
+mysql.host: '192.168.2.103'
+mysql.user: 'root'
+mysql.pass: '*********'
+mysql.db: 'salt'
+mysql.port: 3306
+
+2. systemctl restart salt-master
+3. salt '*' test.ping
+4. salt '*' cmd.run 'df -h'
+
+
+# 目标选择 
+salt '*' test.ping  # *匹配
+salt 'linux-node[1-2].com' test.ping 
+salt 'linux-node[1,2].com' test.ping 
+sale -E 'linux-node(1|2).com' test.ping  # 正则匹配 -E
+
+base:
+  'linux-node(1|2).com':
+    - match: pcre
+    - web.lamp
+
+salt -L 'linux-node1.com,linux-node2.com,linux-node3.com' test.ping  # List 
+salt -G 'os:CentOs' test.ping # -G grains
+salt -S 192.168.2.103/24 test.ping # -S ip
+salt -S 192.168.2.104 test.ping 
+
+
+salt '*' -b 10 test.ping # 批处理
+salt '*' -G 'os:CentOS' --batch-size 25% apache.signal restart 
+
+# 执行模块
+
+salt '*' network.active_tcp  # 活跃的tcp连接
+salt '*' network.arp 
+
+salt '*' network.connect archlinux.org 80 # 测试端口
+salt '*' network.connect archlinux.org 80 timeout=3
+salt '*' network.connect archlinux.org 80 timeout=3 family=ipv4
+salt '*' network.connect archlinux.org port=53 proto=udp timeout=3
+ 
+salt '*' network.dig archinux.org # 域名解析
+salt '*' network.netstat 
+salt '*' network.ping  www.baidu.com 
+
+salt '*' state.show_top
+
+# 日常管理
+# include  包含状态
+include:
+  - web.httpd  # include httd.sls
+   
+# 测试
+salt-run manage.status
+salr-run manage.versions
+
+# 修改minion_id
+	停止minion服务
+	salt-key -d minionid 删除minion
+	rm -r /etc/salt/minion_id
+	rm -f /etc/salt/pki
+	修改配置文件id
+	启动minion服务
 
 ```
 
-### 18.  
+### 18.  SaltStack 六     
 
 ```json
+# salt本地管理 无master架构
+
+# file_client: remote   # 将 remote 改为 local
+salt-call --local state.sls web.tomcat
+
+#  zabbix-agent 案例
+/srv/salt/
+├── base     # 公共的
+│   ├── init  # ---初始化
+│   │   ├── files
+│   │   │   └── epel-7.repo
+│   │   └── yum-repo.sls
+│   ├── logstash   # ---logstash
+│   ├── top.sls
+│   ├── web
+│   │   ├── apache.sls
+│   │   ├── apache-tomcat-8.0.46.tar.gz
+│   │   ├── append.sls
+│   │   ├── lamp.sls
+│   │   └── tomcat.sls
+│   └── zabbix   # ---zabbix
+│       ├── files
+│       │   └── zabbix_agentd.conf
+│       └── zabbix-agent.sls
+├── dev
+├── prod
+└── test
+
+1. vim yum-repo.sls
+/etc/yum.repos.d/epel-7.repo
+  file.managed:
+    - source: salt://init/files/epel-7.repo
+    - user: root
+    - group: root
+    - mode: 644
+
+2. vim zabbix-agent.sls
+#include:
+  #- init: yum-repo
+
+zabbix-agent:
+  pkg.installed:
+    - name: zabbix40-agent
+    #- require:
+    #  - file: /etc/yum.repos.d/epel.repo
+  file.managed:
+    - name: /etc/zabbix_agentd.conf
+    - source: salt://zabbix/files/zabbix_agentd.conf
+    - user: root
+    - group: root
+    - mode: 644
+    - template: jinja
+    - defaults:
+      ZABBIX_SERVER: 192.168.2.103
+      AGENT_HOSTNAME: {{ grains['fqdn'] }}
+    - require:
+      - pkg: zabbix-agent
+  service.running:
+    - name: zabbix-agent
+    - enable: True
+    - watch:
+      - file: zabbix-agent 
+      - pkg: zabbix-agent
+
+zabbix_agent.conf.d:
+  file.directory:
+    - name: /etc/zabbix_agentd.conf.d
+    - watch_in:
+      - service: zabbix-agent
+    - require:
+      - pkg: zabbix-agent
+      - file: zabbix-agent
+3. zabbix_agentd.conf
+Server={{ ZABBIX_SERVER }}
+Hostname={{ AGENT_HOSTNAME }}
+
+Include=/etc/zabbix_agentd.conf.d/ # 去掉注释
+4. salt '*' state.sls zabbix.zabbix-agent test=True
+5. salt '*' state.sls zabbix.zabbix-agent 
+# 执行效果如下:
+#---------------------------------------------------------------------------
+192.168.2.102:
+----------
+          ID: zabbix-agent
+    Function: pkg.installed
+        Name: zabbix40-agent
+      Result: True
+     Comment: Package zabbix40-agent is already installed.
+     Started: 23:38:15.756715
+    Duration: 15205.207 ms
+     Changes:   
+----------
+          ID: zabbix-agent
+    Function: file.managed
+        Name: /etc/zabbix_agentd.conf
+      Result: True
+     Comment: The file /etc/zabbix_agentd.conf is in the correct state
+     Started: 23:38:30.963639
+    Duration: 20.409 ms
+     Changes:   
+----------
+          ID: zabbix_agent.conf.d
+    Function: file.directory
+        Name: /etc/zabbix_agentd.conf.d
+      Result: True
+     Comment: The directory /etc/zabbix_agentd.conf.d is in the correct state
+     Started: 23:38:30.987142
+    Duration: 1.938 ms
+     Changes:   
+----------
+          ID: zabbix-agent
+    Function: service.running
+      Result: True
+     Comment: Service zabbix-agent is already enabled, and is in the desired state
+     Started: 23:38:30.989642
+    Duration: 1308.499 ms
+     Changes:   
+
+Summary
+------------
+Succeeded: 4
+Failed:    0
+------------
+Total states run:     4
+192.168.2.104:
+----------
+          ID: zabbix-agent
+    Function: pkg.installed
+        Name: zabbix40-agent
+      Result: True
+     Comment: Package zabbix40-agent is already installed.
+     Started: 05:25:14.603753
+    Duration: 13347.962 ms
+     Changes:   
+----------
+          ID: zabbix-agent
+    Function: file.managed
+        Name: /etc/zabbix_agentd.conf
+      Result: True
+     Comment: The file /etc/zabbix_agentd.conf is in the correct state
+     Started: 05:25:28.106326
+    Duration: 120.26 ms
+     Changes:   
+----------
+          ID: zabbix_agent.conf.d
+    Function: file.directory
+        Name: /etc/zabbix_agentd.conf.d
+      Result: True
+     Comment: The directory /etc/zabbix_agentd.conf.d is in the correct state
+     Started: 05:25:28.227367
+    Duration: 0.364 ms
+     Changes:   
+----------
+          ID: zabbix-agent
+    Function: service.running
+      Result: True
+     Comment: Service zabbix-agent is already enabled, and is in the desired state
+     Started: 05:25:28.227845
+    Duration: 1109.733 ms
+     Changes:   
+
+Summary
+------------
+Succeeded: 4
+Failed:    0
+------------
+Total states run:     4
+#---------------------------------------------------------------------------
+
+6. 系统初始化
+	DNS   file.managed
+	防火墙  service.dead
+	limit设置  file.managed
+	SSH useDNS设置,修改端口 file.managed
+	systemctl 内核参数调优 systemctl
+	关闭不需要的服务 service
+	时间同步  file.managed cron
+	基础软件包 pkg.installed
+	include:
+      - init.yum-repo
+
+    base-pkg:
+      pkg.installed:
+        - pkg:
+          - screen
+          - lrzsz
+          - vim
+	yum源 file.managed
+
 
 ```
 
-### 19.  
+### 19.  SaltStack 七
 
 ```json
+# salt Redis部署
+
+/srv/salt/prod/
+├── modules
+│   ├── apache
+│   ├── haproxy
+│   ├── keepalived
+│   ├── mysql
+│   └── redis
+│       └── redis-install.sls
+└── redis-cluster
+    ├── files
+    │   └── redis-master.conf
+    └── redis-master.sls
+
+
+1. vim redis-install.sls
+redis-install:
+  pkg.installed:
+    - name: redis
+2. redis-master.sls
+include:
+  - modules.redis.redis-install
+
+redis-master-config:
+  file.managed:
+    - name: /etc/redis.conf
+    - source: salt://redis-cluster/files/redis-master.conf
+    - user: root
+    - group: root
+    - mode: 644
+    - template: jinja
+    - defaults:
+      REDIS_MEM: 100M
+
+redis-master-service:
+  service.running:
+    - name: redis
+    - enable: True
+    - watch:
+      - file: redis-master-config
+
+3. salt '*' state.sls redis-cluster.redis-master  saltenv=prod  # 默认 base环境
+# 执行效果如下:
+#---------------------------------------------------------------------------
+192.168.2.102:
+----------
+          ID: redis-install
+    Function: pkg.installed
+        Name: redis
+      Result: None
+     Comment: The following packages are set to be installed/updated: redis
+     Started: 00:33:34.239727
+    Duration: 1015.057 ms
+     Changes:   
+----------
+          ID: redis-master-config
+    Function: file.managed
+        Name: /etc/redis.conf
+      Result: None
+     Comment: The file /etc/redis.conf is set to be changed
+     Started: 00:33:35.257619
+    Duration: 288.224 ms
+     Changes:   
+              ----------
+              newfile:
+                  /etc/redis.conf
+----------
+          ID: redis-master-service
+    Function: service.running
+        Name: redis
+      Result: None
+     Comment: Service is set to be started
+     Started: 00:33:35.601150
+    Duration: 226.642 ms
+     Changes:   
+
+Summary
+------------
+Succeeded: 3 (unchanged=3, changed=1)
+Failed:    0
+------------
+Total states run:     3
+192.168.2.104:
+----------
+          ID: redis-install
+    Function: pkg.installed
+        Name: redis
+      Result: True
+     Comment: Package redis is already installed.
+     Started: 06:20:39.511771
+    Duration: 999.409 ms
+     Changes:   
+----------
+          ID: redis-master-config
+    Function: file.managed
+        Name: /etc/redis.conf
+      Result: None
+     Comment: The file /etc/redis.conf is set to be changed
+     Started: 06:20:40.513646
+    Duration: 299.917 ms
+     Changes:   
+              ----------
+              diff:
+                  --- 
+                  +++ 
+                  @@ -58,7 +58,7 @@
+                   # IF YOU ARE SURE YOU WANT YOUR INSTANCE TO LISTEN TO ALL THE INTERFACES
+                   # JUST COMMENT THE FOLLOWING LINE.
+                   # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                  -bind 127.0.0.1
+                  +bind 0.0.0.0
+                   
+                   # Protected mode is a layer of security protection, in order to avoid that
+                   # Redis instances left open on the internet are accessed and exploited.
+                  @@ -125,7 +125,7 @@
+                   
+                   # By default Redis does not run as a daemon. Use 'yes' if you need it.
+                   # Note that Redis will write a pid file in /var/run/redis.pid when daemonized.
+                  -daemonize no
+                  +daemonize yes
+                   
+                   # If you run Redis from upstart or systemd, Redis can interact with your
+                   # supervision tree. Options:
+                  @@ -534,7 +534,7 @@
+                   # limit for maxmemory so that there is some free RAM on the system for slave
+                   # output buffers (but this is not needed if the policy is 'noeviction').
+                   #
+                  -# maxmemory <bytes>
+                  + maxmemory 100M
+                   
+                   # MAXMEMORY POLICY: how Redis will select what to remove when maxmemory
+                   # is reached. You can select among five behaviors:
+              mode:
+                  0644
+              user:
+                  root
+----------
+          ID: redis-master-service
+    Function: service.running
+        Name: redis
+      Result: None
+     Comment: Service is set to be started
+     Started: 06:20:41.150092
+    Duration: 239.849 ms
+     Changes:   
+
+Summary
+------------
+Succeeded: 3 (unchanged=2, changed=1)
+Failed:    0
+------------
+Total states run:     3
+#---------------------------------------------------------------------------
+```
+
+### 20.  SaltStack 八
+
+```json
+# salt-ssh systemctl stop salt-minion
+1. yum install -y salt-ssh
+
+2. vim /etc/salt/roster 
+# Sample salt-ssh config file
+#web1:
+#  host: 192.168.42.1 # The IP addr or DNS hostname
+#  user: fred         # Remote executions will be executed as user fred
+#  passwd: foobarbaz  # The password to use for login, if omitted, keys are used
+#  sudo: True         # Whether to sudo to root, not enabled by default
+#web2:
+#  host: 192.168.42.2
+node1:
+  host: 192.168.2.104
+  user: root
+  passwd: 19920308shibin
+  port: 22
+
+node2:
+  host: 192.168.2.103
+  user: root
+  passwd: 19920308shibin
+  port: 22
+
+3.  salt-ssh '*' test.ping -i
+4. salt-ssh '*' -r 'w'
+# 执行效果如下:
+#---------------------------------------------------------------------------
+node2:
+    ----------
+    retcode:
+        0
+    stderr:
+    stdout:
+        root@192.168.2.103's password: 
+         01:09:20 up  2:20,  3 users,  load average: 0.10, 0.16, 0.21
+        USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+        root     tty1                      07:48     ?     0.38s  0.38s -bash
+        root     pts/0    192.168.2.101    23:45    8.00s  0.74s  0.02s /usr/bin/python /usr/bin/salt-ssh * -r w
+        root     pts/1    192.168.2.101    23:54   22:08   0.39s  0.39s -bash
+node1:
+    ----------
+    retcode:
+        0
+    stderr:
+    stdout:
+        root@192.168.2.104's password: 
+         06:56:25 up 11:47,  3 users,  load average: 0.00, 0.04, 0.05
+        USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+        root     tty1                      19:09    1:24m  2.27s  2.27s -bash
+        root     pts/0    192.168.2.101    05:32   21:37   1.39s  1.39s -bash
+        root     pts/1    192.168.2.101    05:42   55:21   1.09s  1.09s -bash
+
+#--------------------------------------------------------------------------- 
+```
+
+### 21.  SaltStack 九
+
+```json
+# salt-api
+https://docs.saltstack.com/en/latest/topics/netapi/writing.html
+1. yum install salt-api
+2. yum install pyOpenSSL
+3. salt-call --local tls.create_self_signed_cert
+[ERROR   ] You should upgrade pyOpenSSL to at least 0.14.1 to enable the use of X509 extensions
+local:
+    Created Private Key: "/etc/pki/tls/certs/localhost.key." Created Certificate: "/etc/pki/tls/certs/localhost.crt."
+4. vim  /etc/salt/master.d/api.conf
+rest_cherrypy:
+  host: 192.168.2.103
+  port: 8000
+  ssl_cert: /etc/pki/tls/certs/localhost.crt
+  ssl_key: /etc/pki/tls/certs/localhost.key
+5. useradd -M -s /sbin/nologin saltapi  # 创建用户 -M 不创建home目录 -s 仅做验证
+6. echo "saltapi" | passwd saltapi --stdin # 非交互式创建密码
+7. vim /etc/salt/master.d/auth.conf
+external_auth:
+  pam:
+    saltapi:
+      - .*
+      - '@wheel'
+      - '@runner'
+      - '@jobs'
+8. systemctl restart salt-master
+9. systemctl start salt-api
+10. curl -sSk http://192.168.2.103:8000/login \
+	-H 'Accept: application/x-yaml' \
+	-H 'X-Auth-Token: xxxxxxxxxxxxxxxxxxxx' \
+	-d username='saltapi' \
+	-d password='saltapi' \
+	-d eauth='pam'
 
 ```
 
-### 20.  
-
-```json
-
-```
-
-### 21.  
-
-```json
-
-```
-
-### 22.  
+### 22.  SaltStack 十
 
 ```json
 
