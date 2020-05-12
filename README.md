@@ -1418,14 +1418,72 @@ external_auth:
 ### 22.  SaltStack 十
 
 ```json
-# salt-master高可用
+# salt-master高可用  多master
+minion配置可写为列表:
+master:
+  - 192.168.2.103
+  - 192.168.2.104
+
+保证两台master配置相同  # nfs文件共享
+
+# nfs 搭建 on 192.168.2.103
+yum install nfs-utils rpcbind
+ vim /etc/exports
+/etc/salt/pki/master  192.168.2.104 *(rw,sync,no_root_squash,no_all_squash)
+/srv/salt  192.168.2.104 *(rw,sync,no_root_squash,no_all_squash)
+systemctl start nfs
+# on 192.168.2.104
+mount -t nfs  192.168.2.103:/etc/salt/pki/master /etc/salt/pki/master
+mount -t nfs  192.168.2.103:/srv/salt /srv/salt
+systemctl start salt-master
 
 ```
 
-### 23.  
+### 23.  docker
 
 ```json
 
+1. installation
+
+https://cr.console.aliyun.com/cn-hangzhou/new
+
+
+wget https://download.docker.com/linux/centos/docker-ce.repo -O /etc/yum.repos.d/docker-ce.repo
+yum install docker-ce python-pip docker-compose #单机编排工具
+
+systemctl enable docker.service
+systemctl start docker.service
+
+docker pull centos
+docker pull busybox
+docker pull mysql
+docker pull nginx
+docker pull alpine
+docker pull aclstack/mem
+docker pull aclstack/cpu
+docker pull progrium/sonsul
+docker pull sebp/elk
+docker pull fluent/fluentd
+
+2. 配置镜像加速器
+
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<-'EOF'
+{
+  "registry-mirrors": ["https://hr1upp6v.mirror.aliyuncs.com"]
+}
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+3. vim /usr/lib/systemd/system/docker.service
+# ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock 修改为
+ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock -H tcp://192.168.2.103 -H unix:///var/run/docker.sock
+# ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock -H tcp://0.0.0.0 -H unix:///var/run/docker.sock  
+4. docker -H 192.168.2.103 info  # 验证
+
+
+00:18:20
 ```
 
 ### 24.  
