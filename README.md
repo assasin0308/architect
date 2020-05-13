@@ -1481,9 +1481,91 @@ sudo systemctl restart docker
 ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock -H tcp://192.168.2.103 -H unix:///var/run/docker.sock
 # ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock -H tcp://0.0.0.0 -H unix:///var/run/docker.sock  
 4. docker -H 192.168.2.103 info  # 验证
+5. docker search lnmp # 搜索镜像
+6. docker run hello-world
+7. docker images # 查看所有镜像
+#-------------------------------------------------------
+             交互模式       别名     镜像名    执行的命令
+8. docker run -it --name assasin_centos  centos     bash 
+
+exit/ 
+docker run assasin_centos
+docker attach assasin_centos
+Ctrl + p  q
+docker exec -it assasin_centos bash
+#-------------------------------------------------------
+9. docker ps -a # 查看正在运行的镜像
+10. docker rm -f  0b436ff2011d # -f 强制删除
+11. docker run -it --name mini_os alpine sh
 
 
-00:18:20
+12. 镜像制作:
+	docker run -it --name my_nginx centos bash
+[root@1d05506fe6ac yum.repos.d]  rpm -ivh https://mirrors.aliyun.com/epel/epel-release-latest-7.noarch.rpm 
+[root@1d05506fe6ac yum.repos.d] yum install nginx -y 
+[root@1d05506fe6ac yum.repos.d] yum install php-fpm -y 
+[root@1d05506fe6ac yum.repos.d] yum install supervisor  # 多进程管理工具
+[root@1d05506fe6ac yum.repos.d] vi /etc/supervisor.conf # file=supervisord.d/*.ini
+[root@1d05506fe6ac yum.repos.d] vi php_nginx.ini
+
+[supervisord]
+nodaemon=true # 后台模式运行
+
+[program:nginx]
+comand=/usr/sbin/nginx -g "daemon off;" # 非后台模式启动
+
+[program:phpfpm]
+comand=/sur/sbin/php-fpm -F -c /etc/php.ini 
+autostart = true
+startsecs = 3
+autorestart = true
+startretries = 3
+user = root
+redirect_stderr = false
+stdout_logfile_maxbytes = 50MB
+stdout_logfile_backups = 20
+
+[root@1d05506fe6ac yum.repos.d] supervisord 
+[root@1d05506fe6ac yum.repos.d]  退出镜像
+
+                                     镜像名/ID  仓库名
+	docker commit -m 'assasin nginx' my_nginx nginx:v1
+
+#---------------------------------------------------------------------------
+                     端口映射    容器名称         容器名称/ID        命令
+13.  docker run -it -p 80:80  --name nginx_v1  1d05506fe6ac   supervisord 
+
+# 提交镜像至官方仓库
+ #我的dockerId: assasinshibin xxxxxxxxxxx
+ docker login   
+ docker tag  1d05506fe6ac 仓库名/镜像名:版本号
+ docker push 仓库名/镜像名:版本号
+#---------------------------------------------------------------------------
+14.  mysql 
+# 错误: docker run -it --name mysql -p 8888:3306 mysql
+# 报错信息: You need to specify one of MYSQL_ROOT_PASSWORD, MYSQL_ALLOW_EMPTY_PASSWORD and MYSQL_RANDOM_ROOT_PASSWORD 
+# 正确: docker run -it --name mysql -p 8888:3306 -e MYSQL_ALLOW_EMPTY_PASSWORD=true mysql
+
+docker run -it --name mysql -p 8888:3306 --rm mysql  # 停止后自动删除 仅限于测试
+docker run -it --name mysql -p 8888:3306 -e MYSQL_ROOT_PASSWORD=123456 mysql
+# 注意:随机密码 在打印信息中
+docker run -it --name mysql -p 8888:3306 -e MYSQL_RANDOM_ROOT_PASSWORD=true mysql
+
+#--------------------------------------------------------------------------- 
+15. docker run -it --rm -m 50M aclstack/mem mem  # 每秒请求10M内存 go实现
+16. docker run --cpuset-cpus 0 -it --rm -c 2048 aclstack/cpu cpu  # 在0号CPU执行 -c 指定权重 默认1024
+
+
+
+
+
+
+
+
+
+
+
+
 ```
 
 ### 24.  
