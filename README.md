@@ -1461,7 +1461,7 @@ docker pull nginx
 docker pull alpine
 docker pull aclstack/mem
 docker pull aclstack/cpu
-docker pull progrium/sonsul
+docker pull progrium/consul
 docker pull sebp/elk
 docker pull fluent/fluentd
 
@@ -1512,10 +1512,10 @@ docker exec -it assasin_centos bash
 nodaemon=true # 后台模式运行
 
 [program:nginx]
-comand=/usr/sbin/nginx -g "daemon off;" # 非后台模式启动
+command=/usr/sbin/nginx -g "daemon off;" # 非后台模式启动
 
 [program:phpfpm]
-comand=/sur/sbin/php-fpm -F -c /etc/php.ini 
+command=/usr/sbin/php-fpm -F -c /etc/php.ini 
 autostart = true
 startsecs = 3
 autorestart = true
@@ -1552,17 +1552,118 @@ docker run -it --name mysql -p 8888:3306 -e MYSQL_ROOT_PASSWORD=123456 mysql
 docker run -it --name mysql -p 8888:3306 -e MYSQL_RANDOM_ROOT_PASSWORD=true mysql
 
 #--------------------------------------------------------------------------- 
+
 15. docker run -it --rm -m 50M aclstack/mem mem  # 每秒请求10M内存 go实现
 16. docker run --cpuset-cpus 0 -it --rm -c 2048 aclstack/cpu cpu  # 在0号CPU执行 -c 指定权重 默认1024
 
+#---------------------------------------------------------------------------
+
+17. docker run -it -P --name nginx nginx  # -P 端口随机映射
+18. docker run -it -p 80:80 --name nginx nginx  # -p tcp端口
+19. docker run -it -p 80:80/udp --name nginx nginx  # udp端口
+20. docker run -it -p 192.168.1.103:80:80 --name nginx nginx # 指定IP映射
+#---------------------------------------------------------------------------
+21. 单台容器互联 测试
+docker run -it --rm --name busybox1 busybox  # 终端1
+ip a
+
+docker run -it --rm --link busybox1:busybox1 --name busybox2 busybox  # 终端2
+ping busybox1
+#--------------------------------------------------------------------------------
+22. docker network ls # docker 三种网络模式
+23. docker run -it --net=host nginx # host模式 与宿主机一致
+24. docker network create --driver bridge my_net # 自定义网络
+# 返回cb380ad40d60f643a4c001d64f7d3d9b0ccdc0dca20294e162c55cbd13c41149
+25. dcoker run -it --rm --network-my_net busybox # 创建网络
+26. docker network create --driver bridge --subnet 172.22.16.0/24 --gateway 172.22.16.1 my_net2 # 创建指定网络
+27. docker run --it --rm --network-my_net2 --ip 172.22.16.88 busybox # 指定IP创建
+28. docker run --it --rm --network-my_net2 --ip 172.22.16.88 --name assasin busybox # assasin 必须ping不通
+29. docker run --it --rm --network-my_net2 --ip 172.22.16.88 --name shibin busybox
+#----------------------------------------------------------------------------------
+30. docker network connect my_net2 assasin
+#跨主机互通
+31. docker run -d -p 8500:8500 --name sonsul progrium/consul -server -bootsrap  # mode-3
+32. vim /etc/docker/daemon.json
+{
+    "registry-mirrors": ["https://hr1upp6v.mirror.aliyuncs.com"],
+    "dns":["192.168.2.103","223.55.5"],
+    "data-root" :"/data/docker",
+    "cluster-store": "consul://192.168.2.105:8500",  // dockerd --help | grep cluster
+    "cluster-advertise" "192.168.2.103:2375"
+}
+33. systemctl daemon-reload
+34. 
+35. 
+36. 
+37. 
+38.
+40. 
 
 
+#----------------------------------------------------------------------------------
+# docker-compose
+pip install docker-compose
+# 编写容器编排文件
+docker-compose.yml
 
+web1:
+  image: nginx
+  volumes:
+    - /opt/index1.html:/usr/share/nginx/html/index.html
+  expose:
+    - 80
 
+web2:
+  image: nginx
+  volumes:
+    - /opt/index2.html:/usr/share/nginx/html/index.html
+  expose:
+    - 80
 
+haproxy:
+  image: haproxy
+  volumes:
+    - /opt/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+  links:
+    - web1
+    - web2
+  ports:
+    - "7777:1080"
+    - "80:80"
 
+# haproxy.cfg
+global
+  log 127.0.0.1 local0
+  log 127.0.0.1 local1 notice
+   maxconn 4096
 
+defaults
+  log global
+  mode http
+  option httplog
+  option dontlognull
+  timeout connect 5000ms
+  timeout client 5000ms
+  timeout server 5000ms
 
+listen stats
+  bind 0.0.0.0:1080
+  mode http
+  stats enable
+  stats hide-version
+  stats uri /stats
+  stats auth admin:admin
+
+frontend balance
+  bind 0.0.0.0:80
+  default_backend web_backends
+
+...... 未完
+
+# 启动:  docker-compose -f docker-compose.yml up -d # 后台启动
+# 停止一台: docker stop opt_web1_1
+# 启动: docker start opt_web1_1
+#----------------------------------------------------------------------------------
 
 
 
