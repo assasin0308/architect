@@ -1579,26 +1579,43 @@ ping busybox1
 27. docker run --it --rm --network-my_net2 --ip 172.22.16.88 busybox # 指定IP创建
 28. docker run --it --rm --network-my_net2 --ip 172.22.16.88 --name assasin busybox # assasin 必须ping不通
 29. docker run --it --rm --network-my_net2 --ip 172.22.16.88 --name shibin busybox
-#----------------------------------------------------------------------------------
 30. docker network connect my_net2 assasin
+#----------------------------------------------------------------------------------
 #跨主机互通
 31. docker run -d -p 8500:8500 --name sonsul progrium/consul -server -bootsrap  # mode-3
 32. vim /etc/docker/daemon.json
 {
     "registry-mirrors": ["https://hr1upp6v.mirror.aliyuncs.com"],
     "dns":["192.168.2.103","223.55.5"],
-    "data-root" :"/data/docker",
+    "data-root" :"/data/docker",  # 注意:这里
     "cluster-store": "consul://192.168.2.105:8500",  // dockerd --help | grep cluster
     "cluster-advertise" "192.168.2.103:2375"
 }
 33. systemctl daemon-reload
-34. 
-35. 
-36. 
-37. 
-38.
-40. 
+34. systemctl restart docker.service
+35. docker network create -d --driver overlay ov-net1 # node-1
+# docker network create -d --driver overlay --subnet 10.10.0.0/16  ov-net2 # node-1
+36. docker run -it --rm --network ov_net1 busybox # node-1
+37. docker run -it --rm --network ov_net1 busybox # node-2
+#----------------------------------------------------------------------------------
+# 日志收集
+38. docker run -p 5601:5601 -p 9200:9200 -p 5044:5044 -it --rm --name elk sebp/elk 
+# 若失败 内核参数太小  sysctl vm.max_map_count=262144
+# 删除所有: /var/lib/docker/containers/
+40. 安装 filebeat
+41. vim /etc/filebeat/filebeat.yml
+enable: true
+paths:
+  - /var/lib/docker/containers/*/*.log
+......
+#146 
+hosts:["192.168.2.103:9200"]
+42. /etc/init.d/fielbeat start
+43. 
+44.  
+45.  
 
+21:00
 
 #----------------------------------------------------------------------------------
 # docker-compose
