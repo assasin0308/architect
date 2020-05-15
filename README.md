@@ -1589,7 +1589,12 @@ ping busybox1
     "dns":["192.168.2.103","223.55.5"],
     "data-root" :"/data/docker",  # 注意:这里
     "cluster-store": "consul://192.168.2.105:8500",  // dockerd --help | grep cluster
-    "cluster-advertise" "192.168.2.103:2375"
+    "cluster-advertise" "192.168.2.103:2375",
+    "log-driver": "fluentd",
+    "log-opts": {
+       "fluentd-address": "192.168.2.103:24224",
+    	"tag":"linux-node1.com"
+	}
 }
 33. systemctl daemon-reload
 34. systemctl restart docker.service
@@ -1611,11 +1616,30 @@ paths:
 #146 
 hosts:["192.168.2.103:9200"]
 42. /etc/init.d/fielbeat start
-43. 
-44.  
-45.  
+43.  mkdir /fluent_log
+44.  docker run -d -p 24224:24224 -p 24224:24224/udp -v /fluent_log:/fluentd/log fluent/fluentd  
+#----------------------------------------------------------------------------------
+45. 镜像制作 dockerfile
+vim Dockerfile
 
-21:00
+# 基础镜像
+FROM centos # 指定版本 centos:6.8
+MAINTAINER assasin assasin0308@sina.com
+# 安装软件
+RUN rpm -ivh https://mirrors.aliyun.com/epel/epel-release-latest-7.noarch.rpm && yum install nginx -y 
+
+# 添加文件
+ADD index.html/usr/share/nginx/html/index.html
+
+# 开放端口
+EXPOSE 80
+
+# 启动执行
+CMD [/usr/sbin/nginx -g "daemon off;"]
+
+46. docker build -t mynginx:v2 ./
+
+
 
 #----------------------------------------------------------------------------------
 # docker-compose
@@ -1681,12 +1705,9 @@ frontend balance
 # 停止一台: docker stop opt_web1_1
 # 启动: docker start opt_web1_1
 #----------------------------------------------------------------------------------
-
-
-
 ```
 
-### 24.  
+### 24.  zabbix
 
 ```json
 
