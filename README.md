@@ -1772,8 +1772,8 @@ ETCD_INITIAL_CLUSTER_STATE="new"
 # systemctl enable etcd
 # systemctl start etcd
 
-
-6. keystone
+#------------------------------------------------------------------------
+6. keystone 服务
 # https://docs.openstack.org/keystone/pike/install/keystone-install-rdo.html
 yum install openstack-keystone httpd mod_wsgi -y 
 vim  /etc/keystone/keystone.conf
@@ -1786,17 +1786,99 @@ connection = mysql+pymysql://keystone:keystone@192.168.2.103/keystone
 provider = fernet
 
 su -s /bin/sh -c "keystone-manage db_sync" keystone
+# 测试
+mysql -h 192.168.2.104 -ukeystone -pkeystone -e 'use keystone;show tables;'
 keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
 keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
-keystone-manage bootstrap --bootstrap-password ADMIN_PASS \
-  --bootstrap-admin-url http://controller:35357/v3/ \
-  --bootstrap-internal-url http://controller:5000/v3/ \
-  --bootstrap-public-url http://controller:5000/v3/ \
+keystone-manage bootstrap --bootstrap-password admin \
+  --bootstrap-admin-url http://192.168.2.104:35357/v3/ \
+  --bootstrap-internal-url http://192.168.2.104:5000/v3/ \
+  --bootstrap-public-url http://192.168.2.104:5000/v3/ \
   --bootstrap-region-id RegionOne
 
+vim /etc/httpd/conf/httpd.conf 
+ServerName 192.168.2.104:80
+
+ln -s /usr/share/keystone/wsgi-keystone.conf /etc/httpd/conf.d/
 
 systemctl enable httpd.service
 systemctl start httpd.service
+
+export OS_USERNAME=admin
+export OS_PASSWORD=admin
+export OS_PROJECT_NAME=admin
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_AUTH_URL=http://192.168.2.104:35357/v3
+export OS_IDENTITY_API_VERSION=3
+
+openstack project create --domain default  --description "Service Project" service
+openstack project create --domain default --description "Demo Project" demo
+openstack user create --domain default --password-prompt demo
+openstack role create user
+openstack role add --project demo --user demo user
+unset OS_AUTH_URL OS_PASSWORD
+
+openstack --os-auth-url http://192.168.2.104:35357/v3 \
+  --os-project-domain-name Default --os-user-domain-name Default \
+  --os-project-name admin --os-username admin token issue
+
+ openstack --os-auth-url http://192.168.2.104:5000/v3 \
+  --os-project-domain-name Default --os-user-domain-name Default \
+  --os-project-name demo --os-username demo token issue
+
+vim /root/admin-openstack.sh
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_NAME=admin
+export OS_USERNAME=admin
+export OS_PASSWORD=admin
+export OS_AUTH_URL=http://192.168.2.104:35357/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+
+vim /root/demo-openstack.sh
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_NAME=demo
+export OS_USERNAME=demo
+export OS_PASSWORD=demo
+export OS_AUTH_URL=http://192.168.2.104:5000/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+
+
+source /root/admin-openstack.sh
+source /root/demo-openstack.sh
+
+openstack token issue
+#------------------------------------------------------------------------
+                 keystone
+			用户认证 + 服务目录
+User: 用户
+Project: 项目
+Token: 令牌
+ROle: 角色
+# 日志所在目录: /var/log/keystone/keystone.log
+#------------------------------------------------------------------------
+7.  Glance服务
+
+#------------------------------------------------------------------------
+8. Nova 控制节点
+
+#------------------------------------------------------------------------
+9. Nova-compte 服务
+
+#------------------------------------------------------------------------
+10. neutron控制节点
+
+#------------------------------------------------------------------------
+11. neutron计算节点
+
+#------------------------------------------------------------------------
+12. 创建虚拟机
+
+#------------------------------------------------------------------------
 ```
 
 ### 25.  
