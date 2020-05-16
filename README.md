@@ -1707,10 +1707,96 @@ frontend balance
 #----------------------------------------------------------------------------------
 ```
 
-### 24.  zabbix
+### 24.  OpenStack
 
 ```json
+# 官网: https://docs.openstack.org/zh_CN/install-guide/index.html
+# 时间同步 : yum install ntpdate -y  && ntpdate -u asia.pool.ntp.org
+# echo "*/20 * * * * /usr/sbin/ntpdate -u ntp.api.bz >/dev/null &" >> /var/spool/cron/root
+1. mariadb 
+# yum install mariadb mariadb-server python2-PyMySQL
+# vim  /etc/my.cnf.d/openstack.cnf
+[mysqld]
+bind-address = 10.0.0.11
 
+default-storage-engine = innodb
+innodb_file_per_table = on
+max_connections = 4096
+collation-server = utf8_general_ci
+character-set-server = utf8
+# create databases keystone,nova,nova_api,neutron,cinder
+# grant all on nova* to 'nova'@'%' identify by 'nova'
+GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'localhost' IDENTIFIED BY 'keystone';
+GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%' IDENTIFIED BY 'keystone';
+FLUSH PRIVILEGES;
+# ......
+
+2. openstack
+# yum install centos-release-openstack-rocky -y
+# yum install centos-release-openstack-queens -y
+# yum install centos-release-openstack-pike -y
+# yum install https://rdoproject.org/repos/rdo-release.rpm -y
+# yum install python-openstackclient -y
+# yum install openstack-selinux  -y
+
+3. 消息队列
+# yum install rabbitmq-server -y
+# systemctl enable rabbitmq-server.service 
+# systemctl start rabbitmq-server.service 
+# rabbitmqctl add_user openstack 123456 
+# rabbitmqctl set_user_tags openstack administrator
+# rabbitmqctl set_permissions openstack ".*" ".*" ".*"
+# rabbitmq-plugins enable rabbitmq_management
+
+4. Memcached
+# yum install memcached python-memcached -y
+# vim /etc/sysconfig/memcached  
+# OPTIONS="-l 127.0.0.1,::1,controller" 
+# systemctl enable memcached.service 
+# systemctl start memcached.service 
+
+5. etcd
+yum install etcd
+vim /etc/etcd/etcd.conf # ETCD_INITIAL_ADVERTISE_PEER_URLS, ETCD_ADVERTISE_CLIENT_URLS, ETCD_LISTEN_CLIENT_URLS 为控制节点的管理IP，使其他节点可以通过管理网络来访问。
+
+ETCD_DATA_DIR="/var/lib/etcd/default.etcd"
+ETCD_LISTEN_PEER_URLS="http://10.0.0.11:2380"
+ETCD_LISTEN_CLIENT_URLS="http://10.0.0.11:2379"
+ETCD_NAME="controller"
+#[Clustering]
+ETCD_INITIAL_ADVERTISE_PEER_URLS="http://10.0.0.11:2380"
+ETCD_ADVERTISE_CLIENT_URLS="http://10.0.0.11:2379"
+ETCD_INITIAL_CLUSTER="controller=http://10.0.0.11:2380"
+ETCD_INITIAL_CLUSTER_TOKEN="etcd-cluster-01"
+ETCD_INITIAL_CLUSTER_STATE="new"
+# systemctl enable etcd
+# systemctl start etcd
+
+
+6. keystone
+# https://docs.openstack.org/keystone/pike/install/keystone-install-rdo.html
+yum install openstack-keystone httpd mod_wsgi -y 
+vim  /etc/keystone/keystone.conf
+[database]
+# ...
+#                            db_user  db_pass          db_name
+connection = mysql+pymysql://keystone:keystone@192.168.2.103/keystone
+[token]
+# ...
+provider = fernet
+
+su -s /bin/sh -c "keystone-manage db_sync" keystone
+keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+keystone-manage bootstrap --bootstrap-password ADMIN_PASS \
+  --bootstrap-admin-url http://controller:35357/v3/ \
+  --bootstrap-internal-url http://controller:5000/v3/ \
+  --bootstrap-public-url http://controller:5000/v3/ \
+  --bootstrap-region-id RegionOne
+
+
+systemctl enable httpd.service
+systemctl start httpd.service
 ```
 
 ### 25.  
