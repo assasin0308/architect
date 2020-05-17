@@ -1788,6 +1788,7 @@ provider = fernet
 su -s /bin/sh -c "keystone-manage db_sync" keystone
 # 测试
 mysql -h 192.168.2.104 -ukeystone -pkeystone -e 'use keystone;show tables;'
+
 keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
 keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
 keystone-manage bootstrap --bootstrap-password admin \
@@ -1861,10 +1862,336 @@ Token: 令牌
 ROle: 角色
 # 日志所在目录: /var/log/keystone/keystone.log
 #------------------------------------------------------------------------
+
+
 7.  Glance服务
+# 参考: https://docs.openstack.org/glance/pike/install/index.html
+Glance-api:接受云系统镜像的创建,删除,读取请求
+Glance-Registry: 云系统镜像的注册服务
+# mysql
+CREATE DATABASE glance;
+GRANT ALL PRIVILEGES ON glance.* TO 'glance'@'localhost' IDENTIFIED BY 'glance';
+GRANT ALL PRIVILEGES ON glance.* TO 'glance'@'%' IDENTIFIED BY 'glance';
+FLUSH PRIVILEGES;
+
+
+source /root/admin-openstack.sh 
+openstack user create --domain default --password-prompt glance
+openstack role add --project service --user glance admin
+
+yum install openstack-glance -y 
+
+# 修改glance-api.conf配置
+vim /etc/glance/glance-api.conf
+[database]
+# ...
+connection = mysql+pymysql://glance:glance@192.168.2.104/glance
+
+[keystone_authtoken]
+# ...
+auth_uri = http://192.168.2.104:5000
+auth_url = http://192.168.2.104:35357
+memcached_servers = 192.168.2.104:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = glance
+password = glance
+
+[paste_deploy]
+# ...
+flavor = keystone
+
+[glance_store]
+# ...
+stores = file,http
+default_store = file
+filesystem_store_datadir = /var/lib/glance/images/
+
+
+# 修改/glance-registry.conf配置
+vim  /etc/glance/glance-registry.conf
+[database]
+# ...
+connection = mysql+pymysql://glance:glance@192.168.2.104/glance
+[keystone_authtoken]
+# ...
+auth_uri = http://192.168.2.104:5000
+auth_url = http://192.168.2.104:35357
+memcached_servers = 192.168.2.104:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = glance
+password = glance
+
+[paste_deploy]
+# ...
+flavor = keystone
+
+# 同步数据库
+su -s /bin/sh -c "glance-manage db_sync" glance
+
+
+# 启动glance服务 9191 || 9292 端口
+systemctl enable openstack-glance-api.service openstack-glance-registry.service
+systemctl start openstack-glance-api.service openstack-glance-registry.service
+
+
+# 注册
+openstack service create --name glance --description "OpenStack Image" image
+# openstack endpoint create --region RegionOne image public http://192.168.2.104:9292 # 公网ip
+openstack endpoint create --region RegionOne image internal http://192.168.2.104:9292 # 内网IP
+# openstack endpoint create --region RegionOne image admin http://192.168.2.104:9292 # 管理IP
+
+
+wget http://download.cirros-cloud.net/0.3.5/cirros-0.3.5-x86_64-disk.img
+
+source /root/admin-openstack.sh 
+openstack image create "cirros" \
+  --file cirros-0.3.5-x86_64-disk.img \
+  --disk-format qcow2 --container-format bare \
+  --public
+ openstack image list
+
+# 日志:
+/var/log/glance/
+grep 'ERROR' /var/log/glance/api.log
+grep 'ERROR' /var/log/glance/registry.log
+
+
 
 #------------------------------------------------------------------------
 8. Nova 控制节点
+# 参考:  https://docs.openstack.org/nova/pike/install/controller-install-rdo.html
+# mysql
+CREATE DATABASE nova_api;
+CREATE DATABASE nova;
+CREATE DATABASE nova_cell0;
+GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'localhost' IDENTIFIED BY 'nova';
+GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'%' IDENTIFIED BY 'nova';
+GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'localhost' IDENTIFIED BY 'nova';
+GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'%' IDENTIFIED BY 'nova';
+GRANT ALL PRIVILEGES ON nova_cell0.* TO 'nova'@'localhost' IDENTIFIED BY 'nova';
+GRANT ALL PRIVILEGES ON nova_cell0.* TO 'nova'@'%' IDENTIFIED BY 'nova';
+FLUSH PRIVILEGES;
+
+
+
+
+source /root/admin-openstack.sh 
+openstack user create --domain default --password-prompt nova
+openstack role add --project service --user nova admin
+openstack service create --name nova --description "OpenStack Compute" compute
+# 公网IP
+openstack endpoint create --region RegionOne compute public http://192.168.2.104:8774/v2.1
+# 内网IP
+openstack endpoint create --region RegionOne compute internal http://192.168.2.104:8774/v2.1
+# 管理IP
+openstack endpoint create --region RegionOne compute admin http://192.168.2.104:8774/v2.1
+
+openstack user create --domain default --password-prompt placement
+openstack role add --project service --user placement admin
+
+openstack service create --name placement --description "Placement API" placement
+# 公网IP
+openstack endpoint create --region RegionOne placement public http://192.168.2.104:8778
+# 内网IP
+openstack endpoint create --region RegionOne placement internal http://192.168.2.104:8778
+# 管理IP
+openstack endpoint create --region RegionOne placement admin http://192.168.2.104:8778
+# 安装Nova
+yum install openstack-nova-api openstack-nova-conductor \
+  openstack-nova-console openstack-nova-novncproxy \
+  openstack-nova-scheduler openstack-nova-placement-api -y 
+
+# nova.conf 配置
+vim /etc/nova/nova.conf 
+[DEFAULT]
+# ...
+enabled_apis = osapi_compute,metadata  # 2751
+
+[api_database]
+# ...
+connection = mysql+pymysql://nova:nova@192.168.2.104/nova_api  # 3477
+
+[database]
+# ...
+connection = mysql+pymysql://nova:nova@192.168.2.104/nova # 4453
+
+[DEFAULT]
+# ...
+transport_url = rabbit://openstack:123456@192.168.2.104 # 3128
+
+[api]
+# ...
+auth_strategy = keystone
+
+[keystone_authtoken]
+# ...
+auth_uri = http://192.168.2.104:5000
+auth_url = http://192.168.2.104:35357
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = nova
+password = NOVA_PASS
+
+[DEFAULT]
+# ...
+my_ip = 192.168.2.104
+
+[DEFAULT]
+# ...
+use_neutron = True  # 1815
+firewall_driver = nova.virt.firewall.NoopFirewallDriver # 2477
+
+[vnc]
+enabled = true
+# ...
+vncserver_listen = 192.168.2.104
+vncserver_proxyclient_address = 192.168.2.104
+
+[glance]
+# ...
+api_servers = http://192.168.2.104:9292 # 5040
+
+[oslo_concurrency]
+# ...
+lock_path = /var/lib/nova/tmp
+
+[placement]
+# ...
+os_region_name = RegionOne
+project_domain_name = Default
+project_name = service
+auth_type = password
+user_domain_name = Default
+auth_url = http://192.168.2.104:35357/v3
+username = placement
+password = placement
+
+
+
+vim /etc/httpd/conf.d/00-nova-placement-api.conf
+
+<Directory /usr/bin>
+   <IfVersion >= 2.4>
+      Require all granted
+   </IfVersion>
+   <IfVersion < 2.4>
+      Order allow,deny
+      Allow from all
+   </IfVersion>
+</Directory>
+
+systemctl restart httpd
+
+# 同步数据库
+su -s /bin/sh -c "nova-manage api_db sync" nova
+su -s /bin/sh -c "nova-manage cell_v2 map_cell0" nova
+su -s /bin/sh -c "nova-manage cell_v2 create_cell --name=cell1 --verbose" nova
+su -s /bin/sh -c "nova-manage db sync" nova
+nova-manage cell_v2 list_cells
+
+
+# 启动服务:
+systemctl enable openstack-nova-api.service \
+  openstack-nova-consoleauth.service openstack-nova-scheduler.service \
+  openstack-nova-conductor.service openstack-nova-novncproxy.service
+
+systemctl start openstack-nova-api.service \
+  openstack-nova-consoleauth.service openstack-nova-scheduler.service \
+  openstack-nova-conductor.service openstack-nova-novncproxy.service
+
+
+# 安装配置计算节点 on 192.168.2.103
+yum install openstack-nova-compute -y
+
+vim /etc/nova/nova.conf 
+[DEFAULT]
+# ...
+enabled_apis = osapi_compute,metadata
+
+[DEFAULT]
+# ...
+transport_url = rabbit://openstack:123456@192.168.2.104
+
+[api]
+# ...
+auth_strategy = keystone
+
+[keystone_authtoken]
+# ...
+auth_uri = http://192.168.2.104:5000
+auth_url = http://192.168.2.104:35357
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = nova
+password = nova
+
+
+[DEFAULT]
+# ...
+my_ip = 192.168.2.103
+
+[DEFAULT]
+# ...
+use_neutron = True
+firewall_driver = nova.virt.firewall.NoopFirewallDriver
+
+[vnc]
+# ...
+enabled = True
+vncserver_listen = 192.168.2.103
+vncserver_proxyclient_address = 192.168.2.103
+novncproxy_base_url = http://192.168.2.104:6080/vnc_auto.html
+
+[glance]
+# ...
+api_servers = http://192.168.2.104:9292
+
+[oslo_concurrency]
+# ...
+lock_path = /var/lib/nova/tmp
+
+
+[placement]
+# ...
+os_region_name = RegionOne
+project_domain_name = Default
+project_name = service
+auth_type = password
+user_domain_name = Default
+auth_url = http://192.168.2.104:35357/v3
+username = placement
+password = placement
+
+egrep -c '(vmx|svm)' /proc/cpuinfo
+
+vim /etc/nova/nova.conf 
+[libvirt]
+# ...
+virt_type = qemu  # 生产环境 kvm # 6018
+
+systemctl enable libvirtd.service openstack-nova-compute.service
+systemctl start libvirtd.service openstack-nova-compute.service
+
+
+source /root/admin-openstack.sh 
+su -s /bin/sh -c "nova-manage cell_v2 discover_hosts --verbose" nova
+
+vim /etc/nova/nova.conf
+[scheduler]
+discover_hosts_in_cells_interval = 300
+
 
 #------------------------------------------------------------------------
 9. Nova-compte 服务
