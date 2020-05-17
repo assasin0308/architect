@@ -2186,6 +2186,8 @@ systemctl start libvirtd.service openstack-nova-compute.service
 
 
 source /root/admin-openstack.sh 
+
+openstack compute service list --service nova-compute
 su -s /bin/sh -c "nova-manage cell_v2 discover_hosts --verbose" nova
 
 vim /etc/nova/nova.conf
@@ -2194,18 +2196,362 @@ discover_hosts_in_cells_interval = 300
 
 
 #------------------------------------------------------------------------
-9. Nova-compte 服务
-
-#------------------------------------------------------------------------
 10. neutron控制节点
+# 参考: https://docs.openstack.org/neutron/pike/install/controller-install-rdo.html
+# mysql
+CREATE DATABASE neutron;
+GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' IDENTIFIED BY 'neutron';
+GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' IDENTIFIED BY 'neutron';
+
+source /root/admin-openstack.sh 
+openstack user create --domain default --password-prompt neutron
+openstack role add --project service --user neutron admin
+openstack service create --name neutron --description "OpenStack Networking" network
+# 公网IP
+openstack endpoint create --region RegionOne network public http://192.168.2.104:9696
+# 内网IP
+openstack endpoint create --region RegionOne network internal http://192.168.2.104:9696
+# 管理IP
+openstack endpoint create --region RegionOne network admin http://192.168.2.104:9696
+# on 192.168.2.104 
+yum install openstack-neutron openstack-neutron-ml2 \
+  openstack-neutron-linuxbridge ebtables
+
+vim  /etc/neutron/neutron.conf
+[database]
+# ...
+connection = mysql+pymysql://neutron:neutron@192.168.2.104/neutron # 710 
+
+[DEFAULT]
+# ...
+core_plugin = ml2  # 30
+service_plugins =    # 33
+
+[DEFAULT]
+# ...
+transport_url = rabbit://openstack:123456@192.168.2.104     # 553
+
+[DEFAULT]
+# ...
+auth_strategy = keystone  # 27
+
+[keystone_authtoken]    # 794
+# ...
+auth_uri = http://192.168.2.104:5000
+auth_url = http://192.168.2.104:35357
+memcached_servers = 192.168.2.104:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = neutron
+
+
+[DEFAULT]  # 98
+# ...
+notify_nova_on_port_status_changes = true  
+notify_nova_on_port_data_changes = true    # 102
+
+[nova]  # 1023
+# ...
+auth_url = http://192.168.2.104:35357
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = nova
+password = nova
+
+
+[oslo_concurrency]
+# ...
+lock_path = /var/lib/neutron/tmp  # 1143
+
+
+vim /etc/neutron/plugins/ml2/ml2_conf.ini
+[ml2]
+# ...
+type_drivers = flat,vlan
+tenant_network_types =
+mechanism_drivers = linuxbridge
+extension_drivers = port_security
+
+[ml2_type_flat]
+# ...
+flat_networks = provider
+
+[securitygroup]
+# ...
+enable_ipset = true
+
+
+vim /etc/neutron/plugins/ml2/linuxbridge_agent.ini
+
+[linux_bridge]
+physical_interface_mappings = provider:eth0
+# physical_interface_mappings = provider:eth0  # eth0 网卡名称
+
+
+[vxlan]
+enable_vxlan = false
+
+[securitygroup]
+# ...
+enable_security_group = true
+firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+
+
+
+vim /etc/neutron/dhcp_agent.ini
+[DEFAULT]
+# ...
+interface_driver = linuxbridge # 16
+dhcp_driver = neutron.agent.linux.dhcp.Dnsmasq  # 32 
+enable_isolated_metadata = true  # 41 
+
+
+vim /etc/neutron/metadata_agent.ini
+[DEFAULT]
+# ...
+nova_metadata_host = 192.168.2.104  # 23
+metadata_proxy_shared_secret = openstack   # 35
+
+vim  /etc/nova/nova.conf
+[neutron]  # 7096
+# ...
+url = http://192.168.2.104:9696
+auth_url = http://192.168.2.104:35357
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = neutron
+service_metadata_proxy = true
+metadata_proxy_shared_secret = openstack
+
+
+ln -s /etc/neutron/plugins/ml2/ml2_conf.ini /etc/neutron/plugin.ini
+
+su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head" neutron
+
+# 重启nova_api
+systemctl restart openstack-nova-api.service
+
+# 启动服务
+systemctl enable neutron-server.service \
+  neutron-linuxbridge-agent.service neutron-dhcp-agent.service \
+  neutron-metadata-agent.service
+systemctl start neutron-server.service \
+  neutron-linuxbridge-agent.service neutron-dhcp-agent.service \
+  neutron-metadata-agent.service
+
+
 
 #------------------------------------------------------------------------
 11. neutron计算节点
 
-#------------------------------------------------------------------------
-12. 创建虚拟机
+# 参考: https://docs.openstack.org/neutron/pike/install/compute-install-rdo.html
+# on 192.168.2.103 
+yum install openstack-neutron-linuxbridge ebtables ipset
+
+vim /etc/neutron/neutron.conf 
+
+[DEFAULT] # 553
+# ...
+transport_url = rabbit://openstack:openstack@192.168.2.104
+
+[DEFAULT]
+# ...
+auth_strategy = keystone
+
+[keystone_authtoken]
+# ...
+auth_uri = http://192.168.2.104:5000
+auth_url = http://192.168.2.104:35357
+memcached_servers = 192.168.2.104:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = neutron
+
+
+[oslo_concurrency]
+# ...
+lock_path = /var/lib/neutron/tmp
+
+
+vim /etc/neutron/plugins/ml2/linuxbridge_agent.ini
+[linux_bridge]
+physical_interface_mappings = provider:eth0
+[vxlan]
+enable_vxlan = false
+
+[securitygroup]
+# ...
+enable_security_group = true
+firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+
+vim /etc/nova/nova.conf 
+[neutron]
+# ...
+url = http://192.168.2.104:9696
+auth_url = http://192.168.2.104:35357
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = neutron
+
+
+# 重启nova-compute
+systemctl restart openstack-nova-compute.service
+
+# 服务启动
+systemctl enable neutron-linuxbridge-agent.service
+systemctl start neutron-linuxbridge-agent.service
+
+# 在控制节点 192.168.2.104 验证
+openstack network agent list
+openstack compute service list
+openstack image list
 
 #------------------------------------------------------------------------
+12. 创建虚拟机
+参考: https://docs.openstack.org/install-guide/launch-instance-networks-provider.html
+
+source /root/admin-openstack.sh 
+openstack network create  --share --external \
+  --provider-physical-network provider \
+  --provider-network-type flat provider
+# 查看网络
+openstack network list
+
+
+
+# 创建子网
+openstack subnet create --network provider \
+  --allocation-pool start=192.168.2.100,end=192.168.2.200 \
+  --dns-nameserver 223.5.5.5 --gateway 192.168.2.2 \
+  --subnet-range 192.168.2.0/24 provider
+
+# 查看子网
+openstack subnet list
+
+# Create m1.nano flavor
+openstack flavor create --id 0 --vcpus 1 --ram 64 --disk 1 m1.nano
+
+source /root/demo-openstack.sh
+ssh-keygen -q -N ""
+openstack keypair create --public-key ~/.ssh/id_rsa.pub mykey
+# 验证
+openstack keypair list
+# 增加规则 开放22端口
+openstack security group rule create --proto icmp default
+openstack security group rule create --proto tcp --dst-port 22 default
+
+
+
+# 在 192.168.2.104
+source /root/admin-openstack.sh 
+openstack flavor list
+openstack image list
+openstack network list
+openstack security group list
+openstack server create --flavor m1.nano --image cirros \
+  --nic net-id= 改为 'openstack network list' 输出的id   --security-group default \
+  --key-name mykey provider-instance
+# 检查虚拟机状态
+openstack server list
+openstack console url show provider-instance
+
+#------------------------------------------------------------------------
+13. 部署 horizon
+参考: https://docs.openstack.org/horizon/pike/install/install-rdo.html
+
+
+yum install openstack-dashboard
+
+vim  /etc/openstack-dashboard/local_settings
+OPENSTACK_HOST = "192.168.2.104"
+# ALLOWED_HOSTS = ['one.example.com', 'two.example.com']
+ALLOWED_HOSTS = ['*',] # 38 允许所有
+
+
+SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+
+CACHES = {
+    'default': {
+         'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
+         'LOCATION': '192.168.2.104:11211',
+    }
+}
+
+
+OPENSTACK_KEYSTONE_URL = "http://%s:5000/v3" % 192.168.2.104
+OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT = True  # 75
+
+OPENSTACK_API_VERSIONS = {
+    "identity": 3,
+    "image": 2,
+    "volume": 2,
+}
+
+
+OPENSTACK_KEYSTONE_DEFAULT_DOMAIN = "Default"  # 97
+OPENSTACK_KEYSTONE_DEFAULT_ROLE = "user"   # 185
+OPENSTACK_NEUTRON_NETWORK = {    # 312
+    ...
+    'enable_router': False,
+    'enable_quotas': False,
+    'enable_distributed_router': False,
+    'enable_ha_router': False,
+    'enable_lb': False,
+    'enable_firewall': False,
+    'enable_vpn': False,
+    'enable_fip_topology_check': False,
+}
+
+# TIME_ZONE = "TIME_ZONE"
+TIME_ZONE = "Asia/Shanghai"
+
+systemctl restart httpd.service memcached.service
+
+#------------------------------------------------------------------------
+14. 
+
+
+
+
+
+
+#------------------------------------------------------------------------
+15.
+
+
+
+
+#------------------------------------------------------------------------
+16.
+
+
+
+
+#------------------------------------------------------------------------
+17.
+
+
+
+
+#------------------------------------------------------------------------
+
 ```
 
 ### 25.  
