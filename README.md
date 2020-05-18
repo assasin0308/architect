@@ -2525,11 +2525,20 @@ TIME_ZONE = "Asia/Shanghai"
 systemctl restart httpd.service memcached.service
 
 #------------------------------------------------------------------------
-14. 
+14. 镜像 
+# 虚拟机位置: /var/lib/nova/instance/
+# 参考: https://docs.openstack.org/image-guide/obtain-images.html
+# https://docs.openstack.org/image-guide/centos-image.html
 
-
-
-
+# 自定义镜像
+virsh net-list
+qemu-img create -f qcow2 /tmp/centos.qcow2 10G
+virt-install --virt-type kvm --name centos --ram 1024 \
+  --disk /tmp/centos.qcow2,format=qcow2 \
+  --network network=default \
+  --graphics vnc,listen=0.0.0.0 --noautoconsole \
+  --os-type=linux --os-variant=centos7.0 \
+  --location=/data/isos/CentOS-7-x86_64-NetInstall-1611.iso  #  镜像文件iso位置
 
 
 #------------------------------------------------------------------------
