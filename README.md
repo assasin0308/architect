@@ -2549,6 +2549,27 @@ virt-install --virt-type kvm --name centos --ram 1024 \
 ### 25.  KVM
 
 ```json
+# 1. installation
+grep -E '(vmx|svm)' /proc/cpuinfo
+# 效果如下:
+#------------------------------------------------------------------------------
+flags		: fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss syscall nx pdpe1gb rdtscp lm constant_tsc arch_perfmon nopl xtopology tsc_reliable nonstop_tsc eagerfpu pni pclmulqdq vmx ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch arat tpr_shadow vnmi ept vpid fsgsbase tsc_adjust bmi1 avx2 smep bmi2 invpcid mpx rdseed adx smap clflushopt xsaveopt xsavec xsaves
+#------------------------------------------------------------------------------
+
+yum install qemu-kvm libvirt virt-install -y 
+lsmod | grep kvm
+rpm -ql qemu-kvm
+# 创建硬盘
+qemu-img create -f raw /opt/CentOS-7-x86_64.raw 10G
+# 启动libvirtd
+systemctl start libvirtd
+# 安装
+virt-install --virt-type kvm --name CentOS-7-x86_64 --ram 1024 --cdrom=/opt/CentOS7-x86_64-DVD-1511.iso --disk path=/opt/CentOS-7-x86_64.raw --network network=default 
+--graphics vnc,listen=0.0.0.0 --noautoconsole 
+# 安装时设置  按Tab键输入
+#quiet      net.ifnames=0 biosdevname=0
+
+
 
 ```
 
