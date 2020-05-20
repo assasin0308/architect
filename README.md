@@ -2569,14 +2569,80 @@ virt-install --virt-type kvm --name CentOS-7-x86_64 --ram 1024 --cdrom=/opt/Cent
 # 安装时设置  按Tab键输入
 #quiet      net.ifnames=0 biosdevname=0
 
+# 进入交互模式
+virsh
+# virsh list --all 查看
+# 启动虚拟机
+virsh start list中的name值
+# 修改虚拟机网卡 vim /etc/sysconfig/network-script/ifcfg-eth0
+TYPE=Ethernet
+BOOTPROTO=dhcp
+NAME=eth0
+DEVICE=eth0
+ONBOOT=yes
+# systemctl restart network 
+# ip ad li
+
+# 自定义桥接网卡
+rpm -q bridge-utils
+brctl addbr br0
+# 进行桥接
+brctl addif br0 eth0 # 但是网络会中断
+# 删除 eth0
+ip addr del dev eth0 192.168.2.103/24
+# 将br0 网卡设置为 192.168.2.103
+ifconfig br0 192.1682.103/24 up
+# 加默认路由
+route add default gw 192.168.2.1  # 默认网关 192.168.2.1
+
 
 
 ```
 
-### 26.  
+### 26.  VNC服务
 
 ```json
+# CentOS7安装VNC，让Windows远程连接CentOS7图形化界面，并实现创建虚拟机
+# 检出是否安装VNC
+rpm -q tigervnc tigervnc-server
+# 安装X-Window
+yum check-update
+yum groupinstall “X Window System”
+yum install gnome-classic-session gnome-terminal nautilus-open-terminal control-center liberation-mono-fonts -y
+unlink /etc/systemd/system/default.target
+ln -sf /lib/systemd/system/graphical.target /etc/systemd/system/default.target
+reboot #重启机器
 
+# 安装VNC
+yum install tigervnc-server -y
+# 从VNC备份库中复制service文件到系统service服务管理目录下【原文这里存在错误,不是创建vncserver@:1.service文件夹】
+cp /lib/systemd/system/vncserver@.service /etc/systemd/system/vncserver@:1.service
+#复制并被重命名为vncserver@:1.service
+# 修改vncserver@:1.service文件
+#cd /etc/systemd/system/vncserver@:1.service
+#vi vncserver@:1.service
+33:[Unit]
+34:Description=Remote desktop service (VNC)
+35:After=syslog.target network.target
+37:[Service]
+38:Type=forking
+39:User=root
+42:ExecStartPre=-/usr/bin/vncserver -kill %i
+43:ExecStart=/sbin/runuser -l root -c “/usr/bin/vncserver %i”
+44:PIDFile=/root/.vnc/%H%i.pid
+45:ExecStop=-/usr/bin/vncserver -kill %i
+47:[Install]
+48:WantedBy=multi-user.target
+
+systemctl daemon-reload
+# 为vncserver@:1.service设置密码
+vncpasswd
+
+systemctl enable vncserver@:1.service #设置开机启动
+systemctl start vncserver@:1.service #启动vnc会话服务
+systemctl status vncserver@:1.service #查看nvc会话服务状态
+systemctl stop vncserver@:1.service #关闭nvc会话服务
+netstat -lnt | grep 590* #查看端口
 ```
 
 ### 27.  
