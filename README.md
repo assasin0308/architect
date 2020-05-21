@@ -2595,7 +2595,8 @@ ifconfig br0 192.1682.103/24 up
 # 加默认路由
 route add default gw 192.168.2.1  # 默认网关 192.168.2.1
 
-
+# KVM管理平台
+CloudStack
 
 ```
 
@@ -2645,9 +2646,17 @@ systemctl stop vncserver@:1.service #关闭nvc会话服务
 netstat -lnt | grep 590* #查看端口
 ```
 
-### 27.  
+### 27.  K8s
 
 ```json
+# https://github.com/kubernetes
+0.32
+
+
+
+
+
+
 
 ```
 
