@@ -2672,9 +2672,12 @@ netstat -lnt | grep 590* #查看端口
 
 ```
 
-### 30.  
+### 30.  docker
 
 ```json
+# 删除镜像: docker image rm 4bb46517cac3(镜像id)
+# 导出镜像: docker image save 4bb46517cac3(镜像id) > /usr/local/xxxx.tar.gz
+# 导入镜像: docker image load -i /usr/local/xxxx.tar.gz
 
 ```
 
