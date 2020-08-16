@@ -2678,6 +2678,13 @@ netstat -lnt | grep 590* #查看端口
 # 删除镜像: docker image rm 4bb46517cac3(镜像id)
 # 导出镜像: docker image save 4bb46517cac3(镜像id) > /usr/local/xxxx.tar.gz
 # 导入镜像: docker image load -i /usr/local/xxxx.tar.gz
+# 运行容器: docker container run -it --name='assasin'  4bb46517cac3(镜像id)
+# 查看所有容器状态: docker container ls   | docker container ls -a 
+
+# 守护式容器: docker run -d --name='xxxxnginx' nginx:1.14
+
+
+
 
 ```
 
